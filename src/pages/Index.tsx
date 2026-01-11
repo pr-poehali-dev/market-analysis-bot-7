@@ -3,19 +3,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import Icon from '@/components/ui/icon';
 import { Signal, MarketData, Trade } from '@/types/trading';
-import SignalsPanel from '@/components/SignalsPanel';
-import RiskManagement from '@/components/RiskManagement';
 import TradingTabs from '@/components/TradingTabs';
 import MarketSelector from '@/components/MarketSelector';
 import ActiveTrades from '@/components/ActiveTrades';
+import ProfitableSignals from '@/components/ProfitableSignals';
+import MarketAnalysis from '@/components/MarketAnalysis';
 import { generateSignals, generateMarketData } from '@/utils/signalGenerator';
 import { toast } from '@/hooks/use-toast';
 
 const Index = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [autoUpdate, setAutoUpdate] = useState(true);
-  const [riskPercent, setRiskPercent] = useState(2);
-  const [balance, setBalance] = useState(1000);
+  const [balance, setBalance] = useState(10000);
   const [selectedMarket, setSelectedMarket] = useState<'classic' | 'otc' | 'all'>('all');
 
   const [signals, setSignals] = useState<Signal[]>([]);
@@ -47,7 +46,7 @@ const Index = () => {
   useEffect(() => {
     const signalTimer = setInterval(() => {
       regenerateSignals();
-    }, 10000);
+    }, 1000);
 
     return () => clearInterval(signalTimer);
   }, [regenerateSignals]);
@@ -55,7 +54,7 @@ const Index = () => {
   useEffect(() => {
     const marketTimer = setInterval(() => {
       regenerateMarketData();
-    }, 3000);
+    }, 1000);
 
     return () => clearInterval(marketTimer);
   }, [regenerateMarketData]);
@@ -120,12 +119,10 @@ const Index = () => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const calculatePositionSize = () => {
-    return ((balance * riskPercent) / 100).toFixed(2);
-  };
+
 
   const handleOpenTrade = (signal: Signal) => {
-    const positionSize = Number(calculatePositionSize());
+    const positionSize = (balance * (signal.probability >= 95 ? 0.05 : signal.probability >= 90 ? 0.04 : 0.03));
     
     if (positionSize > balance) {
       toast({
@@ -276,13 +273,12 @@ const Index = () => {
             />
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="space-y-4">
-                <SignalsPanel 
-                  signals={filteredSignals} 
-                  formatTime={formatTime}
-                  onOpenTrade={handleOpenTrade}
-                />
-              </div>
+              <ProfitableSignals
+                signals={filteredSignals}
+                formatTime={formatTime}
+                onOpenTrade={handleOpenTrade}
+                balance={balance}
+              />
 
               <div className="space-y-4">
                 <ActiveTrades
@@ -291,14 +287,7 @@ const Index = () => {
                   currentTime={currentTime}
                 />
                 
-                <RiskManagement
-                  riskPercent={riskPercent}
-                  setRiskPercent={setRiskPercent}
-                  balance={balance}
-                  setBalance={setBalance}
-                  calculatePositionSize={calculatePositionSize}
-                  marketData={marketData}
-                />
+                <MarketAnalysis marketData={marketData} />
               </div>
             </div>
           </TabsContent>
