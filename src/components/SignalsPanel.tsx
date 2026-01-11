@@ -10,9 +10,10 @@ import { Signal } from '@/types/trading';
 interface SignalsPanelProps {
   signals: Signal[];
   formatTime: (seconds: number) => string;
+  onOpenTrade: (signal: Signal) => void;
 }
 
-const SignalsPanel = ({ signals, formatTime }: SignalsPanelProps) => {
+const SignalsPanel = ({ signals, formatTime, onOpenTrade }: SignalsPanelProps) => {
   return (
     <Card>
       <CardHeader>
@@ -70,6 +71,35 @@ const SignalsPanel = ({ signals, formatTime }: SignalsPanelProps) => {
 
                   <Separator className="my-3" />
 
+                  <div className="grid grid-cols-4 gap-2 mb-3">
+                    <div className="col-span-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-muted-foreground">Технические индикаторы</span>
+                        <Badge variant={signal.confidence === 'high' ? 'default' : signal.confidence === 'medium' ? 'secondary' : 'outline'} className="text-xs">
+                          {signal.confidence === 'high' ? '🔥 Высокая' : signal.confidence === 'medium' ? '⚡ Средняя' : '⚠️ Низкая'}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2 p-2 bg-muted/30 rounded-lg">
+                        <div className="text-center">
+                          <p className="text-[10px] text-muted-foreground">RSI</p>
+                          <p className="text-xs font-mono font-bold">{signal.indicators.rsi}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-[10px] text-muted-foreground">MACD</p>
+                          <p className="text-xs font-mono font-bold">{signal.indicators.macd}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-[10px] text-muted-foreground">EMA</p>
+                          <p className="text-xs font-mono font-bold">{signal.indicators.ema}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-[10px] text-muted-foreground">BB</p>
+                          <p className="text-xs font-mono font-bold">{signal.indicators.bollinger}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4 mb-3">
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">Вероятность</p>
@@ -90,12 +120,13 @@ const SignalsPanel = ({ signals, formatTime }: SignalsPanelProps) => {
                     className="w-full"
                     variant={signal.direction === 'CALL' ? 'default' : 'destructive'}
                     disabled={signal.status !== 'active' || signal.timeToOpen > 60}
+                    onClick={() => onOpenTrade(signal)}
                   >
                     {signal.timeToOpen > 60
                       ? `Ожидание ${formatTime(signal.timeToOpen - 60)}`
                       : signal.direction === 'CALL'
-                      ? 'Открыть CALL'
-                      : 'Открыть PUT'}
+                      ? '📈 Открыть CALL'
+                      : '📉 Открыть PUT'}
                   </Button>
                 </CardContent>
               </Card>

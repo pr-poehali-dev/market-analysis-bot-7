@@ -1,67 +1,64 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import Icon from '@/components/ui/icon';
-import { Signal, MarketData } from '@/types/trading';
+import { Signal, MarketData, Trade } from '@/types/trading';
 import SignalsPanel from '@/components/SignalsPanel';
 import RiskManagement from '@/components/RiskManagement';
 import TradingTabs from '@/components/TradingTabs';
+import MarketSelector from '@/components/MarketSelector';
+import ActiveTrades from '@/components/ActiveTrades';
+import { generateSignals, generateMarketData } from '@/utils/signalGenerator';
+import { toast } from '@/hooks/use-toast';
 
 const Index = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [riskPercent, setRiskPercent] = useState(2);
   const [balance, setBalance] = useState(1000);
+  const [selectedMarket, setSelectedMarket] = useState<'classic' | 'otc' | 'all'>('all');
 
-  const [signals, setSignals] = useState<Signal[]>([
-    {
-      id: '1',
-      pair: 'EUR/USD',
-      direction: 'CALL',
-      expiration: '1м',
-      probability: 87,
-      timeToOpen: 45,
-      status: 'active',
-      strategy: 'RSI + MACD',
-      market: 'classic',
-    },
-    {
-      id: '2',
-      pair: 'GBP/USD',
-      direction: 'PUT',
-      expiration: '2м',
-      probability: 82,
-      timeToOpen: 120,
-      status: 'waiting',
-      strategy: 'Bollinger Bands',
-      market: 'otc',
-    },
-    {
-      id: '3',
-      pair: 'BTC/USD',
-      direction: 'CALL',
-      expiration: '3м',
-      probability: 91,
-      timeToOpen: 30,
-      status: 'active',
-      strategy: 'EMA Crossover',
-      market: 'classic',
-    },
-  ]);
-
-  const [marketData] = useState<MarketData[]>([
-    { pair: 'EUR/USD', trend: 'up', volume: 1250000, volatility: 0.65 },
-    { pair: 'GBP/USD', trend: 'down', volume: 980000, volatility: 0.82 },
-    { pair: 'USD/JPY', trend: 'neutral', volume: 1100000, volatility: 0.45 },
-    { pair: 'BTC/USD', trend: 'up', volume: 2300000, volatility: 1.25 },
-  ]);
-
-  const [stats] = useState({
-    todayTrades: 24,
-    todayProfit: 156.50,
-    winRate: 75,
-    totalProfit: 2340.80,
+  const [signals, setSignals] = useState<Signal[]>([]);
+  const [marketData, setMarketData] = useState<MarketData[]>([]);
+  const [trades, setTrades] = useState<Trade[]>([]);
+  
+  const [stats, setStats] = useState({
+    todayTrades: 0,
+    todayProfit: 0,
+    winRate: 0,
+    totalProfit: 0,
   });
+
+  const regenerateSignals = useCallback(() => {
+    const newSignals = generateSignals(selectedMarket);
+    setSignals(newSignals);
+  }, [selectedMarket]);
+
+  const regenerateMarketData = useCallback(() => {
+    const newMarketData = generateMarketData(selectedMarket);
+    setMarketData(newMarketData);
+  }, [selectedMarket]);
+
+  useEffect(() => {
+    regenerateSignals();
+    regenerateMarketData();
+  }, [regenerateSignals, regenerateMarketData]);
+
+  useEffect(() => {
+    const signalTimer = setInterval(() => {
+      regenerateSignals();
+    }, 10000);
+
+    return () => clearInterval(signalTimer);
+  }, [regenerateSignals]);
+
+  useEffect(() => {
+    const marketTimer = setInterval(() => {
+      regenerateMarketData();
+    }, 3000);
+
+    return () => clearInterval(marketTimer);
+  }, [regenerateMarketData]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -73,6 +70,45 @@ const Index = () => {
             timeToOpen: signal.timeToOpen > 0 ? signal.timeToOpen - 1 : 0,
           }))
         );
+
+        setTrades(prev => {
+          const updated = prev.map(trade => {
+            if (trade.status === 'open') {
+              const openDate = new Date(trade.openTime);
+              const expirationMinutes = parseInt(trade.expiration);
+              const closeDate = new Date(openDate.getTime() + expirationMinutes * 60000);
+              
+              if (new Date() >= closeDate) {
+                const isWin = Math.random() > 0.3;
+                const profit = isWin ? trade.amount * 0.8 : -trade.amount;
+                
+                setBalance(prev => prev + trade.amount + profit);
+                
+                setStats(prev => ({
+                  todayTrades: prev.todayTrades + 1,
+                  todayProfit: prev.todayProfit + profit,
+                  winRate: Math.round(((prev.todayTrades * prev.winRate / 100 + (isWin ? 1 : 0)) / (prev.todayTrades + 1)) * 100),
+                  totalProfit: prev.totalProfit + profit,
+                }));
+
+                toast({
+                  title: isWin ? '✅ Сделка закрыта в прибыль!' : '❌ Сделка закрыта в убыток',
+                  description: `${trade.pair} ${trade.direction}: ${isWin ? '+' : ''}$${profit.toFixed(2)}`,
+                  variant: isWin ? 'default' : 'destructive',
+                });
+
+                return {
+                  ...trade,
+                  status: isWin ? 'win' : 'loss',
+                  profit,
+                  closeTime: new Date().toLocaleTimeString('ru-RU'),
+                };
+              }
+            }
+            return trade;
+          });
+          return updated;
+        });
       }
     }, 1000);
     return () => clearInterval(timer);
@@ -88,6 +124,44 @@ const Index = () => {
     return ((balance * riskPercent) / 100).toFixed(2);
   };
 
+  const handleOpenTrade = (signal: Signal) => {
+    const positionSize = Number(calculatePositionSize());
+    
+    if (positionSize > balance) {
+      toast({
+        title: '⚠️ Недостаточно средств',
+        description: 'Пополните баланс или уменьшите процент риска',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const newTrade: Trade = {
+      id: `trade-${Date.now()}`,
+      pair: signal.pair,
+      direction: signal.direction,
+      openTime: new Date().toLocaleTimeString('ru-RU'),
+      expiration: signal.expiration,
+      amount: positionSize,
+      profit: 0,
+      status: 'open',
+      market: signal.market,
+    };
+
+    setTrades(prev => [newTrade, ...prev]);
+    setBalance(prev => prev - positionSize);
+
+    toast({
+      title: '🚀 Сделка открыта!',
+      description: `${signal.pair} ${signal.direction} на $${positionSize} (${signal.market.toUpperCase()})`,
+    });
+  };
+
+  const classicSignals = signals.filter(s => s.market === 'classic');
+  const otcSignals = signals.filter(s => s.market === 'otc');
+  const filteredSignals = selectedMarket === 'all' ? signals : 
+                         selectedMarket === 'classic' ? classicSignals : otcSignals;
+
   return (
     <div className="min-h-screen bg-background p-4">
       <div className="max-w-[1800px] mx-auto space-y-4">
@@ -97,8 +171,10 @@ const Index = () => {
               <Icon name="TrendingUp" size={24} className="text-background" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold">Pocket Option Analyzer</h1>
-              <p className="text-sm text-muted-foreground">Real-time Market Intelligence</p>
+              <h1 className="text-2xl font-bold">Pocket Option Analyzer Pro</h1>
+              <p className="text-sm text-muted-foreground">
+                🔄 Real-time AI Analysis • 🎯 Smart Signals • 📊 Multi-Market
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -128,7 +204,9 @@ const Index = () => {
               <CardTitle className="text-sm font-medium">Прибыль сегодня</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-mono font-bold text-primary">+${stats.todayProfit}</div>
+              <div className={`text-3xl font-mono font-bold ${stats.todayProfit >= 0 ? 'text-primary' : 'text-destructive'}`}>
+                {stats.todayProfit >= 0 ? '+' : ''}${stats.todayProfit.toFixed(2)}
+              </div>
             </CardContent>
           </Card>
 
@@ -146,7 +224,9 @@ const Index = () => {
               <CardTitle className="text-sm font-medium">Общая прибыль</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-mono font-bold text-primary">${stats.totalProfit}</div>
+              <div className={`text-3xl font-mono font-bold ${stats.totalProfit >= 0 ? 'text-primary' : 'text-destructive'}`}>
+                {stats.totalProfit >= 0 ? '+' : ''}${stats.totalProfit.toFixed(2)}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -188,19 +268,38 @@ const Index = () => {
           </TabsList>
 
           <TabsContent value="signals" className="space-y-4">
+            <MarketSelector
+              selectedMarket={selectedMarket}
+              onMarketChange={setSelectedMarket}
+              classicCount={classicSignals.length}
+              otcCount={otcSignals.length}
+            />
+            
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <div className="space-y-4">
-                <SignalsPanel signals={signals} formatTime={formatTime} />
+                <SignalsPanel 
+                  signals={filteredSignals} 
+                  formatTime={formatTime}
+                  onOpenTrade={handleOpenTrade}
+                />
               </div>
 
-              <RiskManagement
-                riskPercent={riskPercent}
-                setRiskPercent={setRiskPercent}
-                balance={balance}
-                setBalance={setBalance}
-                calculatePositionSize={calculatePositionSize}
-                marketData={marketData}
-              />
+              <div className="space-y-4">
+                <ActiveTrades
+                  trades={trades}
+                  formatTime={formatTime}
+                  currentTime={currentTime}
+                />
+                
+                <RiskManagement
+                  riskPercent={riskPercent}
+                  setRiskPercent={setRiskPercent}
+                  balance={balance}
+                  setBalance={setBalance}
+                  calculatePositionSize={calculatePositionSize}
+                  marketData={marketData}
+                />
+              </div>
             </div>
           </TabsContent>
 
